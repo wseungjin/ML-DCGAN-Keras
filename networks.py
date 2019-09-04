@@ -77,39 +77,37 @@ class DCGAN:
         g_model = Sequential()
         dropout = 0.5
         
-        g_model.add(Dense(8 * 8 * 256, input_shape=(self.z_dim,)))
-        
+        g_model.add(Dense(4 * 4 * 1024, input_shape=(self.z_dim,)))
         g_model.add(BatchNormalization(momentum=0.8))
         g_model.add(ReLU())
-        g_model.add(Reshape((8, 8, 256)))
+        g_model.add(Reshape((4, 4, 1024)))
         g_model.add(Dropout(dropout))
 
-        g_model.add(Dropout(dropout))
         g_model.add(UpSampling2D())
         
-        g_model.add(Conv2DTranspose(128, 5, padding='same'))
+        g_model.add(Conv2DTranspose(512, 5, padding='same'))
         g_model.add(BatchNormalization())
         g_model.add(ReLU())
         g_model.add(Dropout(dropout))
         
         g_model.add(UpSampling2D())
         
-        g_model.add(Conv2DTranspose(64, 5, padding='same'))
+        g_model.add(Conv2DTranspose(256, 5, padding='same'))
         g_model.add(BatchNormalization(momentum=0.9))
         g_model.add(Activation('relu'))
         g_model.add(Dropout(dropout))
 
         g_model.add(UpSampling2D())
         
-        g_model.add(Conv2DTranspose(32, 5, padding='same'))
+        g_model.add(Conv2DTranspose(128, 5, padding='same'))
         g_model.add(BatchNormalization())
         g_model.add(ReLU())
         g_model.add(Dropout(dropout))
 
-        # g_model.add(UpSampling2D())
+        g_model.add(UpSampling2D())
         
         g_model.add(Conv2DTranspose(self.c_dim, 5, padding='same')) 
-        g_model.add(Activation('sigmoid'))
+        g_model.add(Activation('tanh'))
 
         
         return g_model
@@ -120,22 +118,22 @@ class DCGAN:
         
         d_model.add(Conv2D(self.ch*2,kernel_size=(3,3),strides=1,padding='same',input_shape=self.input_shape))
         d_model.add(BatchNormalization())
-        d_model.add(ReLU())
+        d_model.add(LeakyReLU())
         d_model.add(Dropout(dropout))
         
         d_model.add(Conv2D(self.ch*2,kernel_size=(3,3),strides=2,padding='same'))
         d_model.add(BatchNormalization())
-        d_model.add(ReLU())
+        d_model.add(LeakyReLU())
         d_model.add(Dropout(dropout))
         
         d_model.add(Conv2D(self.ch//2,kernel_size=(3,3),strides=2,padding='same'))
         d_model.add(BatchNormalization())
-        d_model.add(ReLU())
+        d_model.add(LeakyReLU())
         d_model.add(Dropout(dropout))
         
         d_model.add(Conv2D(self.ch//2,kernel_size=(3,3),strides=2,padding='same'))
         d_model.add(BatchNormalization())
-        d_model.add(ReLU())
+        d_model.add(LeakyReLU())
         d_model.add(Dropout(dropout))
         
         d_model.add(Flatten())
@@ -151,7 +149,7 @@ class DCGAN:
         self.data = Image_Data_Class.load_data(dataset_name=self.dataset_name)
 
         
-        self.input_shape=(64,64,3)
+        self.input_shape=(self.img_size,self.img_size,self.c_dim)
                         
         
         self.g_model=self.generator()
@@ -163,7 +161,7 @@ class DCGAN:
         self.d_model.compile(self.d_optimizer,loss="binary_crossentropy")
         
         self.g_optimizer = Adam(lr=self.g_learning_rate)
-        self.g_model.compile("SGD",loss="binary_crossentropy")
+        self.g_model.compile(self.g_optimizer,loss="binary_crossentropy")
 
         self.d_model.trainable = False
         self.g_d_model = Sequential()
@@ -171,7 +169,8 @@ class DCGAN:
         self.g_d_model.add(self.d_model)
         self.g_d_model.summary()
         
-        self.g_d_model.compile(self.g_optimizer,loss="binary_crossentropy")
+        self.g_d_optimizer = Adam(lr=self.g_learning_rate)
+        self.g_d_model.compile(self.g_d_optimizer,loss="binary_crossentropy")
 
 
 
@@ -187,14 +186,14 @@ class DCGAN:
             print("Epoch is", epoch)
             print("Number of batches", int(x_train.shape[0]/BATCH_SIZE))
             for index in range(int(x_train.shape[0]/BATCH_SIZE)):
-                noise = np.random.uniform(-1, 1, size=(BATCH_SIZE, 128))
+                noise = np.random.uniform(-1, 1, size=(BATCH_SIZE, self.z_dim))
                 image_batch = x_train[index*BATCH_SIZE:(index+1)*BATCH_SIZE]
                 generated_images = self.g_model.predict(noise, verbose=0)
                 X = np.concatenate((image_batch, generated_images))
                 y = [1] * BATCH_SIZE + [0] * BATCH_SIZE
                 self.d_loss = self.d_model.train_on_batch(X, y)
                 print("batch %d d_loss : %f" % (index, self.d_loss))
-                noise = np.random.uniform(-1, 1, (BATCH_SIZE, 128))
+                noise = np.random.uniform(-1, 1, (BATCH_SIZE, self.z_dim))
                 self.d_model.trainable = False
                 self.g_loss = self.g_d_model.train_on_batch(noise, [1] * BATCH_SIZE)
                 self.d_model.trainable = True
@@ -213,7 +212,7 @@ class DCGAN:
         g.compile(loss='binary_crossentropy', optimizer="SGD")
         g.load_weights('generator')
         for i in range(20):
-            noise = np.random.uniform(-1, 1, (self.batch_size, 128))
+            noise = np.random.uniform(-1, 1, (self.batch_size, self.z_dim))
             generated_images = g.predict(noise, verbose=1)
             image = image*255.0
             Image.fromarray(image.astype(np.uint8)).save("generated_image_"+str(i) +".png")
